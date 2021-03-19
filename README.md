@@ -30,6 +30,7 @@ USAGE
 <!-- commands -->
 * [`trudge hello [FILE]`](#trudge-hello-file)
 * [`trudge help [COMMAND]`](#trudge-help-command)
+* [`trudge new FILE`](#trudge-new-file)
 
 ## `trudge hello [FILE]`
 
@@ -67,4 +68,29 @@ OPTIONS
 ```
 
 _See code: [@oclif/plugin-help](https://github.com/oclif/plugin-help/blob/v3.2.2/src/commands/help.ts)_
+
+## `trudge new FILE`
+
+create a new migration script from a template
+
+```
+USAGE
+  $ trudge new FILE
+
+ARGUMENTS
+  FILE  path to write new script
+
+OPTIONS
+  -h, --help  show CLI help
+  --tpl=tpl   path to script template
+
+EXAMPLES
+  $ trudge new ./migrations/1.hello_world.sql
+  created fa07eb2a0b9c98b9349f8b7c0e2e23d344d55cfe
+
+  $ trudge new ./migrations/1.hello_world.sql --tpl=./migrations/new_template.sql
+  created 24dfbf1dc4f95dd849238ac5692d3e3256bf9ede
+```
+
+_See code: [src/commands/new.ts](https://github.com/numberoverzero/trudge-cli/blob/v0.0.0/src/commands/new.ts)_
 <!-- commandsstop -->
