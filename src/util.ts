@@ -15,7 +15,7 @@ export function setUnion<T>(a: Array<T>, b: Array<T>): Set<T> {
  * @param {Array<T>} b second array
  * @returns {Set<T>} elements that are in both arrays
  */
-export function setIntersect<T>(a: Array<T>, b: Array<T>): Set<T> {
+export function setIntersection<T>(a: Array<T>, b: Array<T>): Set<T> {
   // https://exploringjs.com/impatient-js/ch_sets.html#intersection-a-b
   // ensure shortest array is first
   if (b.length < a.length) [a, b] = [b, a]
