@@ -10,6 +10,7 @@
   "devDependencies": {
     "@oclif/dev-cli": "^1.26.0",
     "@oclif/test": "^1.2.8",
+    "@trivago/prettier-plugin-sort-imports": "^2.0.1",
     "@types/better-sqlite3": "^5.4.1",
     "@types/chai": "^4.2.15",
     "@types/mocha": "^5.2.7",
