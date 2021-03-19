@@ -1,4 +1,3 @@
-import { DEFAULT_MIGRATION_TEMPLATE } from './constants'
 import { alwaysTrue, index, isDefined, valuesByKeyPred } from './util'
 import { Database as DatabaseType, RunResult } from 'better-sqlite3'
 import { createHash } from 'crypto'
@@ -62,7 +61,19 @@ const DEFAULT_SYNCHRONIZE_OPTS: Required<SynchronizeOptions> = {
   forceLatestIfSynchronized: false,
 }
 
-function canonicalMigrationId(m: Migration): string {
+function extractId(filename: string): [number, string] | null {
+  const [, id, name] = path.basename(filename).match(/^(\d+).(.*?)\.sql$/) || []
+  return id ? [Number(id), name] : null
+}
+
+function extractSteps(template: string): [string, string] | null {
+  const [upgrade, downgrade] = template
+    .split(/^--\s*?trudge:downgrade\b/im)
+    .map((part) => part.replace(/^--.*?$/gm, '').trim())
+  return downgrade ? [upgrade, downgrade] : null
+}
+
+function canonicalId(m: Migration): string {
   return createHash('sha1') // fast, secure enough
     .update(
       `id:${
@@ -73,18 +84,28 @@ function canonicalMigrationId(m: Migration): string {
 }
 
 /**
- * Create a migration file in the given directory.  Defaults to current datetime (in utc)
- * unless a date value is passed.
+ * Create a migration file in the given directory.
  *
  * Does not overwrite existing files.
+ * Fails if the id is in use
  * @param migrationsDirectory the directory to store the placeholder in
- * @param name descriptive name for this migration
+ * @param migration the migration to save
  * @returns The created file name without the directory.
  */
-function createMigrationFile(migrationsDirectory: string, id: number, name: string): string {
-  const basename = `${id}.${name}.sql`
+function writeMigrationFile(migrationsDirectory: string, migration: Migration): string {
+  const existingMigrations = readMigrationsDir(migrationsDirectory)
+  const sameId = existingMigrations.filter((o) => o.id === migration.id)
+  if (sameId.length > 0) {
+    const other = sameId[0]
+    throw new Error(`id conflict: ${other.id}.${other.name}`)
+  }
+  const basename = `${migration.id}.${migration.name}.sql`
+  const tpl = `--trudge:upgrade\n${migration.upgrade.trim()}\n--trudge:downgrade\n${migration.downgrade.trim()}\n\n`
+
   // fail on existing files
-  fs.writeFileSync(path.join(migrationsDirectory, basename), DEFAULT_MIGRATION_TEMPLATE, { flag: 'wx' })
+  fs.writeFileSync(path.join(migrationsDirectory, basename), tpl, {
+    flag: 'wx',
+  })
   return basename
 }
 
@@ -103,14 +124,14 @@ function createMigrationFile(migrationsDirectory: string, id: number, name: stri
  *  @param migrationPath the full path to the migration file
  */
 function parseMigrationFile(migrationPath: string): Migration | null {
-  const [, id, name] = path.basename(migrationPath).match(/^(\d+).(.*?)\.sql$/) || []
-  if (!name) return null
-  const [upgrade, downgrade] = fs
-    .readFileSync(migrationPath, 'utf-8')
-    .split(/^--\s*?trudge:downgrade\b/im)
-    .map((part) => part.replace(/^--.*?$/gm, '').trim())
-  if (downgrade === undefined)
-    throw new Error(`malformed migration file "${migrationPath}" (could not find trudge:downgrade)`)
+  const [id, name] = extractId(migrationPath) ?? ['', '']
+  if (!id) return null
+  const template = fs.readFileSync(migrationPath, 'utf-8')
+  const [upgrade, downgrade] = extractSteps(template) ?? ['', '']
+  if (downgrade === undefined) {
+    const msg = `malformed migration data from "${migrationPath}" (could not find trudge:downgrade)`
+    throw new Error(msg)
+  }
   return { id: Number(id), name, upgrade: upgrade, downgrade: downgrade }
 }
 
@@ -163,8 +184,8 @@ function compareMigrationState(expected: Migration[], applied: Migration[]): Mig
   // use Set math on the table keys (migration ids) to pull out values
   // sort results ascending
 
-  const eByFp: { [key: string]: Migration } = index(expected, canonicalMigrationId)
-  const aByFp: { [key: string]: Migration } = index(applied, canonicalMigrationId)
+  const eByFp: { [key: string]: Migration } = index(expected, canonicalId)
+  const aByFp: { [key: string]: Migration } = index(applied, canonicalId)
 
   const shared: Migration[] = valuesByKeyPred(eByFp, (id) => id in aByFp)
   const missing: Migration[] = valuesByKeyPred(eByFp, (id) => !(id in aByFp)) // expected migrations weren't applied
@@ -326,11 +347,14 @@ function synchronizeMigrations(
 export {
   Migration,
   applyMigration,
-  readMigrationsDir,
+  canonicalId,
   compareMigrationState,
-  createMigrationFile,
   createMigrationsTable,
+  extractId,
+  extractSteps,
   parseMigrationFile,
+  readMigrationsDir,
   readMigrationsTable,
   synchronizeMigrations,
+  writeMigrationFile,
 }
