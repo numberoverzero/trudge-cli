@@ -1,30 +1,8 @@
-/**
- * [1,2,3] ∪ [3,4,5] => Set([1,2,3,4,5])
- */
-export function setUnion<T>(a: Array<T>, b: Array<T>): Set<T> {
-  // https://exploringjs.com/impatient-js/ch_sets.html#union-a-b
-  return new Set([...a, ...b])
-}
+type ValueOf<T> = T[keyof T]
+type KeyOf<T> = keyof T
 
-/**
- * [1,2,3] ∩ [3,4,5] => Set([3])
- */
-export function setIntersection<T>(a: Array<T>, b: Array<T>): Set<T> {
-  // https://exploringjs.com/impatient-js/ch_sets.html#intersection-a-b
-  // ensure shortest array is first
-  if (b.length < a.length) [a, b] = [b, a]
-  const smallSet = new Set(a)
-  return new Set(b.filter((x) => smallSet.has(x)))
-}
-
-/**
- * [1,2,3] \ [3,4,5] => Set([1,2])
- */
-export function setDifference<T>(a: Array<T>, b: Array<T>): Set<T> {
-  // https://exploringjs.com/impatient-js/ch_sets.html#difference-a-b
-  const bSet = new Set(b)
-  return new Set(a.filter((x) => !bSet.has(x)))
-}
+type PredicateFn<T> = (k: KeyOf<T>) => boolean
+type KeyFn<T> = (v: ValueOf<T>) => KeyOf<T>
 
 /**
  * type guarding filter to drop non-items from iterables
@@ -41,10 +19,18 @@ export function isDefined<T>(t: T | null | undefined): t is T {
  * construct a new object from an array of values, indexed by a given function.
  * index([0,1,2], (n)=>`hi.${n}`) => {'hi.0':0, 'hi.1':1, 'hi.2':2}
  */
-export function index<TKey extends string | number, TValue>(
-  values: TValue[],
-  id: (v: TValue) => TKey,
-): { [K in TKey]: TValue } {
+export function index<T>(values: ValueOf<T>[], id: KeyFn<T>): T {
   const entries = values.map((v) => [id(v), v])
   return Object.fromEntries(entries)
+}
+
+export function valuesByKeyPred<T>(o: T, pred: PredicateFn<T>): ValueOf<T>[] {
+  return Object.entries(o)
+    .filter(([k]) => pred(k as KeyOf<T>))
+    .map(([, v]) => v)
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function alwaysTrue<T>(t: T): true {
+  return true
 }
