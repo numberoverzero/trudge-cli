@@ -26,11 +26,10 @@ created 24dfbf1dc4f95dd849238ac5692d3e3256bf9ede
   async run(): Promise<void> {
     const { args, flags } = this.parse(New)
 
-    const [id, name] = path.basename(args.file).match(MIGRATION_FILENAME_REGEX) || []
+    const filename = path.basename(args.file)
+    const [, id, name] = filename.match(MIGRATION_FILENAME_REGEX) || []
     if (id === null) {
-      this.error(
-        `malformed filename "${path.basename(args.file)}" should be like 000.description.sql`,
-      )
+      this.error(`malformed filename "${filename}" should be like 000.description.sql`)
     }
     const tpl = flags.tpl
       ? fs.readFileSync(flags.tpl, { encoding: 'utf-8' })
@@ -41,7 +40,9 @@ created 24dfbf1dc4f95dd849238ac5692d3e3256bf9ede
     const existingMigrations = readMigrationsDir(path.dirname(args.file))
     const same = existingMigrations.filter((o) => o.id === Number(id))[0]
     if (same) {
-      this.error(`id conflict "${same.id}.${same.name}.sql" exists`)
+      this.error(
+        `id conflict "${filename}" conflicts with existing id "${same.id}.${same.name}.sql"`,
+      )
     }
     const hash = canonicalId({ id: Number(id), name: name, ...steps })
     fs.writeFileSync(args.file, tpl, { flag: 'wx' })

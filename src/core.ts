@@ -115,7 +115,7 @@ function splitTemplate(template: string): { upgrade: string; downgrade: string }
  *  @param filename the full path to the migration file
  */
 function parseMigrationFile(filename: string): Migration | null {
-  const [id, name] = path.basename(filename).match(MIGRATION_FILENAME_REGEX) || []
+  const [, id, name] = path.basename(filename).match(MIGRATION_FILENAME_REGEX) || []
   if (id === null) return null
   const template = fs.readFileSync(filename, 'utf-8')
   const steps = splitTemplate(template)
@@ -144,7 +144,7 @@ function readMigrationsDir(dir: string): Migration[] {
     .filter(([, count]) => count > 1)
     .map(([id]) => id)
   if (invalidIds.length) {
-    const msg = `migrations directory ${dir} contains duplicate ids ${invalidIds.join(', ')}`
+    const msg = `migrations directory ${dir} contains duplicate ids: [${invalidIds.join(', ')}]`
     throw new Error(msg)
   }
   return migrations
