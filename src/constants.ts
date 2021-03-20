@@ -1,3 +1,4 @@
+export const MIGRATION_FILENAME_REGEX = /^(\d+).(.*?)\.sql$/
 export const DEFAULT_MIGRATION_TABLE_NAME = 'trudge_migrations'
 export const DEFAULT_MIGRATION_DIRECTORY_NAME = 'migrations'
 
