@@ -1,4 +1,5 @@
-import { alwaysTrue, index, isDefined, valuesByKeyPred } from './util'
+import { MIGRATION_FILENAME_REGEX } from './constants'
+import { alwaysTrue, count, index, isDefined, valuesByKeyPred } from './util'
 import { Database as DatabaseType, RunResult } from 'better-sqlite3'
 import { createHash } from 'crypto'
 import fs from 'fs'
@@ -61,18 +62,11 @@ const DEFAULT_SYNCHRONIZE_OPTS: Required<SynchronizeOptions> = {
   forceLatestIfSynchronized: false,
 }
 
-function extractId(filename: string): [number, string] | null {
-  const [, id, name] = path.basename(filename).match(/^(\d+).(.*?)\.sql$/) || []
-  return id ? [Number(id), name] : null
-}
-
-function extractSteps(template: string): [string, string] | null {
-  const [upgrade, downgrade] = template
-    .split(/^--\s*?trudge:downgrade\b/im)
-    .map((part) => part.replace(/^--.*?$/gm, '').trim())
-  return downgrade ? [upgrade, downgrade] : null
-}
-
+/**
+ * The hex sha-1 digest of the canonicalized migration
+ * @param m a migration
+ * @returns hex string of the sha-1 digest
+ */
 function canonicalId(m: Migration): string {
   return createHash('sha1') // fast, secure enough
     .update(
@@ -84,29 +78,26 @@ function canonicalId(m: Migration): string {
 }
 
 /**
- * Create a migration file in the given directory.
+ * Splits the string into (upgrade, downgrade) strings.
+ * Returns null if the string is malformed.
  *
- * Does not overwrite existing files.
- * Fails if the id is in use
- * @param migrationsDirectory the directory to store the placeholder in
- * @param migration the migration to save
- * @returns The created file name without the directory.
+ * @example 001.init.sql
+ * ---trudge:upgrade
+ * CREATE TABLE IF NOT EXISTS Users (
+ *   id    INTEGER PRIMARY KEY,
+ *   email TEXT    NOT NULL
+ * );
+ * --trudge:downgrade
+ * DROP TABLE IF EXISTS Users;
+ *
+ * @param template string to split
+ * @returns the trimmed {upgrade:string, downgrade: string} or null
  */
-function writeMigrationFile(migrationsDirectory: string, migration: Migration): string {
-  const existingMigrations = readMigrationsDir(migrationsDirectory)
-  const sameId = existingMigrations.filter((o) => o.id === migration.id)
-  if (sameId.length > 0) {
-    const other = sameId[0]
-    throw new Error(`id conflict: ${other.id}.${other.name}`)
-  }
-  const basename = `${migration.id}.${migration.name}.sql`
-  const tpl = `--trudge:upgrade\n${migration.upgrade.trim()}\n--trudge:downgrade\n${migration.downgrade.trim()}\n\n`
-
-  // fail on existing files
-  fs.writeFileSync(path.join(migrationsDirectory, basename), tpl, {
-    flag: 'wx',
-  })
-  return basename
+function splitTemplate(template: string): { upgrade: string; downgrade: string } | null {
+  const [upgrade, downgrade] = template
+    .split(/^--\s*?trudge:downgrade\b/im)
+    .map((part) => part.replace(/^--.*?$/gm, '').trim())
+  return downgrade ? { upgrade, downgrade } : null
 }
 
 /**
@@ -121,42 +112,53 @@ function writeMigrationFile(migrationsDirectory: string, migration: Migration): 
  *
  *   -- trudge:downgrade
  *   DROP TABLE Users;
- *  @param migrationPath the full path to the migration file
+ *  @param filename the full path to the migration file
  */
-function parseMigrationFile(migrationPath: string): Migration | null {
-  const [id, name] = extractId(migrationPath) ?? ['', '']
-  if (!id) return null
-  const template = fs.readFileSync(migrationPath, 'utf-8')
-  const [upgrade, downgrade] = extractSteps(template) ?? ['', '']
-  if (downgrade === undefined) {
-    const msg = `malformed migration data from "${migrationPath}" (could not find trudge:downgrade)`
+function parseMigrationFile(filename: string): Migration | null {
+  const [id, name] = path.basename(filename).match(MIGRATION_FILENAME_REGEX) || []
+  if (id === null) return null
+  const template = fs.readFileSync(filename, 'utf-8')
+  const steps = splitTemplate(template)
+  if (!steps) {
+    const msg = `malformed migration data from "${filename}" (could not find --trudge:downgrade)`
     throw new Error(msg)
   }
-  return { id: Number(id), name, upgrade: upgrade, downgrade: downgrade }
+  return { id: Number(id), name, ...steps }
 }
 
 /**
  * Return an unsorted list of Migration objects found in the directory.
  *
  * Malformed and non-migration files are ignored.
- * @param migrationsDirectory the directory to load migrations from
+ * @param dir the directory to load migrations from
  */
-function readMigrationsDir(migrationsDirectory: string): Migration[] {
-  return fs
-    .readdirSync(migrationsDirectory)
-    .map((x) => parseMigrationFile(path.join(migrationsDirectory, x)))
+function readMigrationsDir(dir: string): Migration[] {
+  const migrations = fs
+    .readdirSync(dir)
+    .map((x) => parseMigrationFile(path.join(dir, x)))
     .filter(isDefined)
+
+  // explode on duplicate ids since we rely on them for sequencing
+  const counts = count(migrations, (m) => m.id)
+  const invalidIds = Object.entries(counts)
+    .filter(([, count]) => count > 1)
+    .map(([id]) => id)
+  if (invalidIds.length) {
+    const msg = `migrations directory ${dir} contains duplicate ids ${invalidIds.join(', ')}`
+    throw new Error(msg)
+  }
+  return migrations
 }
 
 /**
  * Create a database table to track applied migrations if it doesn't exist
  * @param db the database connection
- * @param table the table that will store applied migrations
+ * @param tableName the table that will store applied migrations
  */
-function createMigrationsTable(db: DatabaseType, table: string): void {
+function createMigrationsTable(db: DatabaseType, tableName: string): void {
   db.transaction(() => {
     db.prepare(
-      `CREATE TABLE IF NOT EXISTS "${table}" (
+      `CREATE TABLE IF NOT EXISTS "${tableName}" (
         id        INTEGER PRIMARY KEY,
         name      TEXT    NOT NULL,
         upgrade   TEXT    NOT NULL,
@@ -170,15 +172,27 @@ function createMigrationsTable(db: DatabaseType, table: string): void {
  * Return an unsorted list of Migration objects in the database.
  * Returns an empty list if the table does not exist.
  * @param db the database connection
- * @param table the table that stores applied migrations
+ * @param tableName the table that stores applied migrations
  * @param create calls createMigrationsTable before reading when true
  * @returns
  */
-function readMigrationsTable(db: DatabaseType, table: string, create = true): Migration[] {
-  if (create) createMigrationsTable(db, table)
-  return db.prepare(`SELECT id, name, upgrade, downgrade FROM "${table}" ORDER BY id ASC`).all()
+function readMigrationsTable(db: DatabaseType, tableName: string, create = true): Migration[] {
+  if (create) createMigrationsTable(db, tableName)
+  return db.prepare(`SELECT id, name, upgrade, downgrade FROM "${tableName}" ORDER BY id ASC`).all()
 }
 
+/**
+ * Pass in the expected state (usually from readMigrationsDir) and the applied state
+ * (usually from readMigrationsTable) to get a diff of the state.
+ *
+ * Returns:
+ *   shared: migrations that were both expected and applied
+ *   missing: migrations that were expected, and have not been applied
+ *   unexpected: migrations that were applied, but not expected
+ * @param expected usually readMigrationsDir
+ * @param applied usually readMigrationsTable
+ * @returns arrays of missing, unexpected, and shared migrations
+ */
 function compareMigrationState(expected: Migration[], applied: Migration[]): MigrationState {
   // build tables of {id: migration} for expected, applied
   // use Set math on the table keys (migration ids) to pull out values
@@ -205,7 +219,7 @@ function compareMigrationState(expected: Migration[], applied: Migration[]): Mig
  *
  * When force is false, the migration is only applied when the database state does not match the given mode.
  * @param db the database connection
- * @param table the table that stores applied migrations
+ * @param tableName the table that stores applied migrations
  * @param migration the migration to apply
  * @param mode whether to apply the migration upgrade or downgrade
  * @param force apply the migration in the given mode regardless of current state
@@ -213,16 +227,16 @@ function compareMigrationState(expected: Migration[], applied: Migration[]): Mig
  */
 function applyMigration(
   db: DatabaseType,
-  table: string,
+  tableName: string,
   migration: Migration,
   mode: MigrationMode,
   force = false,
 ): boolean {
   const insertStmt = `
-    INSERT OR IGNORE INTO "${table}" (id, name, upgrade, downgrade) VALUES (?, ?, ?, ?)
+    INSERT OR IGNORE INTO "${tableName}" (id, name, upgrade, downgrade) VALUES (?, ?, ?, ?)
     `
   const removeStmt = `
-    DELETE FROM "${table}" WHERE id = ?
+    DELETE FROM "${tableName}" WHERE id = ?
     `
   if (force) {
     switch (mode) {
@@ -280,22 +294,35 @@ function applyMigration(
   }
 }
 
+/**
+ * Attempt to make the database's tracked migrations current against all
+ * migration files in the provided migrations folder
+ * @param db the database connection
+ * @param migrationsTableName the table that stores applied migrations
+ * @param migrationsDirectory the directory containing expected migrations
+ * @param options advanced controls for synchronization
+ * @returns a summary of the state before changes were made, after changes were made,
+ *          and the ordered list of migrations that were applied
+ */
 function synchronizeMigrations(
   db: DatabaseType,
-  table: string,
+  migrationsTableName: string,
   migrationsDirectory: string,
   options: SynchronizeOptions = {},
 ): SynchronizeState {
   const opts = { ...DEFAULT_SYNCHRONIZE_OPTS, ...options }
 
   const expected = readMigrationsDir(migrationsDirectory)
-  const beforeState = compareMigrationState(expected, readMigrationsTable(db, table, true))
+  const beforeState = compareMigrationState(
+    expected,
+    readMigrationsTable(db, migrationsTableName, true),
+  )
   const changes: [Migration, MigrationMode][] = []
 
   function summarize(): SynchronizeState {
     return {
       before: beforeState,
-      after: compareMigrationState(expected, readMigrationsTable(db, table, false)),
+      after: compareMigrationState(expected, readMigrationsTable(db, migrationsTableName, false)),
       changes: changes,
     }
   }
@@ -316,7 +343,7 @@ function synchronizeMigrations(
       .reverse()
       .forEach((migration) => {
         if (opts.shouldApplyDowngrade(migration)) {
-          if (applyMigration(db, table, migration, 'downgrade', false)) {
+          if (applyMigration(db, migrationsTableName, migration, 'downgrade', false)) {
             changes.push([migration, 'downgrade'])
           }
         }
@@ -327,7 +354,7 @@ function synchronizeMigrations(
     // walk forwards along missing so we push oldest first
     beforeState.missing.forEach((migration) => {
       if (opts.shouldApplyUpgrade(migration)) {
-        if (applyMigration(db, table, migration, 'upgrade', false)) {
+        if (applyMigration(db, migrationsTableName, migration, 'upgrade', false)) {
           changes.push([migration, 'upgrade'])
         }
       }
@@ -336,7 +363,7 @@ function synchronizeMigrations(
 
   if (applyLatest) {
     const latest = beforeState.shared[beforeState.shared.length - 1]
-    if (applyMigration(db, table, latest, 'upgrade', true)) {
+    if (applyMigration(db, migrationsTableName, latest, 'upgrade', true)) {
       changes.push([latest, 'upgrade'])
     }
   }
@@ -350,11 +377,9 @@ export {
   canonicalId,
   compareMigrationState,
   createMigrationsTable,
-  extractId,
-  extractSteps,
   parseMigrationFile,
   readMigrationsDir,
   readMigrationsTable,
+  splitTemplate,
   synchronizeMigrations,
-  writeMigrationFile,
 }
