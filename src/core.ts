@@ -48,6 +48,11 @@ type SynchronizeOptions = {
    * true to force the last migration to be upgraded again.
    */
   forceLatestIfSynchronized?: boolean
+
+  /**
+   * Optional verbose logger to call before and after each migration
+   */
+  verbose?: (msg: string) => void
 }
 type SynchronizeState = {
   before: MigrationState
@@ -60,6 +65,9 @@ const DEFAULT_SYNCHRONIZE_OPTS: Required<SynchronizeOptions> = {
   shouldApplyDowngrade: alwaysTrue,
   shouldApplyUpgrade: alwaysTrue,
   forceLatestIfSynchronized: false,
+  verbose: () => {
+    /* no logging */
+  },
 }
 
 /**
@@ -116,7 +124,7 @@ function splitTemplate(template: string): { upgrade: string; downgrade: string }
  */
 function parseMigrationFile(filename: string): Migration | null {
   const [, id, name] = path.basename(filename).match(MIGRATION_FILENAME_REGEX) || []
-  if (id === null) return null
+  if (id === null || id === undefined) return null
   const template = fs.readFileSync(filename, 'utf-8')
   const steps = splitTemplate(template)
   if (!steps) {
@@ -327,6 +335,20 @@ function synchronizeMigrations(
     }
   }
 
+  function apply(migration: Migration, mode: MigrationMode, force: boolean): boolean {
+    const id = `${mode}:${migration.id}.${migration.name}.sql (${canonicalId(migration)})`
+    let res: boolean
+    opts.verbose(`starting ${id}`)
+    try {
+      res = applyMigration(db, migrationsTableName, migration, mode, force)
+    } catch (err) {
+      opts.verbose(`failed ${id}`)
+      throw err
+    }
+    opts.verbose(`finished ${id}`)
+    return res
+  }
+
   const applyLatest =
     opts.forceLatestIfSynchronized &&
     beforeState.shared.length > 0 &&
@@ -343,7 +365,7 @@ function synchronizeMigrations(
       .reverse()
       .forEach((migration) => {
         if (opts.shouldApplyDowngrade(migration)) {
-          if (applyMigration(db, migrationsTableName, migration, 'downgrade', false)) {
+          if (apply(migration, 'downgrade', false)) {
             changes.push([migration, 'downgrade'])
           }
         }
@@ -354,7 +376,7 @@ function synchronizeMigrations(
     // walk forwards along missing so we push oldest first
     beforeState.missing.forEach((migration) => {
       if (opts.shouldApplyUpgrade(migration)) {
-        if (applyMigration(db, migrationsTableName, migration, 'upgrade', false)) {
+        if (apply(migration, 'upgrade', false)) {
           changes.push([migration, 'upgrade'])
         }
       }
@@ -363,7 +385,7 @@ function synchronizeMigrations(
 
   if (applyLatest) {
     const latest = beforeState.shared[beforeState.shared.length - 1]
-    if (applyMigration(db, migrationsTableName, latest, 'upgrade', true)) {
+    if (apply(latest, 'upgrade', true)) {
       changes.push([latest, 'upgrade'])
     }
   }
@@ -373,6 +395,8 @@ function synchronizeMigrations(
 
 export {
   Migration,
+  MigrationMode,
+  SynchronizeState,
   applyMigration,
   canonicalId,
   compareMigrationState,
