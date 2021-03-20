@@ -1,5 +1,5 @@
-import { DEFAULT_MIGRATION_TEMPLATE } from '../constants'
-import { canonicalId, extractId, extractSteps, writeMigrationFile } from '../core'
+import { DEFAULT_MIGRATION_TEMPLATE, MIGRATION_FILENAME_REGEX } from '../constants'
+import { canonicalId, readMigrationsDir, splitTemplate } from '../core'
 import { Command, flags } from '@oclif/command'
 import fs from 'fs'
 import path from 'path'
@@ -26,25 +26,25 @@ created 24dfbf1dc4f95dd849238ac5692d3e3256bf9ede
   async run(): Promise<void> {
     const { args, flags } = this.parse(New)
 
-    const migrationsDirectory = path.dirname(args.file)
-
-    const [id, name] = extractId(args.file) ?? [null, '']
-    if (id === null) throw new Error('filename must match d+..+?.sql (eg 003.users.sql)')
-
+    const [id, name] = path.basename(args.file).match(MIGRATION_FILENAME_REGEX) || []
+    if (id === null) {
+      this.error(
+        `malformed filename "${path.basename(args.file)}" should be like 000.description.sql`,
+      )
+    }
     const tpl = flags.tpl
       ? fs.readFileSync(flags.tpl, { encoding: 'utf-8' })
       : DEFAULT_MIGRATION_TEMPLATE
-
-    const [upgrade, downgrade] = extractSteps(tpl) ?? ['', '']
-    if (!upgrade || !downgrade) throw new Error('malformed template')
-
-    const migration = {
-      id: id,
-      name: name,
-      upgrade: upgrade,
-      downgrade: downgrade,
+    const steps = splitTemplate(tpl)
+    if (!steps)
+      this.error(`malformed template "${flags.tpl}" is missing header '--trudge:downgrade'`)
+    const existingMigrations = readMigrationsDir(path.dirname(args.file))
+    const same = existingMigrations.filter((o) => o.id === Number(id))[0]
+    if (same) {
+      this.error(`id conflict "${same.id}.${same.name}.sql" exists`)
     }
-    writeMigrationFile(migrationsDirectory, migration)
-    this.log(`created ${canonicalId(migration)}`)
+    const hash = canonicalId({ id: Number(id), name: name, ...steps })
+    fs.writeFileSync(args.file, tpl, { flag: 'wx' })
+    this.log(`created ${hash}`)
   }
 }
