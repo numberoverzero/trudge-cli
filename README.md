@@ -19,7 +19,7 @@ $ npm install -g trudge-cli
 $ trudge COMMAND
 running command...
 $ trudge (-v|--version|version)
-trudge-cli/0.0.0 linux-x64 node-v15.11.0
+trudge-cli/1.0.0 linux-x64 node-v15.11.0
 $ trudge --help [COMMAND]
 USAGE
   $ trudge COMMAND
@@ -65,7 +65,7 @@ EXAMPLES
   downgrade:1.hello_world.sql (a86c88c86fd3a2c0245e96294538b5c7b766697f)
 ```
 
-_See code: [src/commands/downgrade.ts](https://github.com/numberoverzero/trudge-cli/blob/v0.0.0/src/commands/downgrade.ts)_
+_See code: [src/commands/downgrade.ts](https://github.com/numberoverzero/trudge-cli/blob/v1.0.0/src/commands/downgrade.ts)_
 
 ## `trudge help [COMMAND]`
 
@@ -107,7 +107,7 @@ EXAMPLES
   created 24dfbf1dc4f95dd849238ac5692d3e3256bf9ede
 ```
 
-_See code: [src/commands/new.ts](https://github.com/numberoverzero/trudge-cli/blob/v0.0.0/src/commands/new.ts)_
+_See code: [src/commands/new.ts](https://github.com/numberoverzero/trudge-cli/blob/v1.0.0/src/commands/new.ts)_
 
 ## `trudge sync DATABASEFILE [MIGRATIONSDIR]`
 
@@ -153,7 +153,7 @@ EXAMPLES
   upgrade:310.backfill_index.sql
 ```
 
-_See code: [src/commands/sync.ts](https://github.com/numberoverzero/trudge-cli/blob/v0.0.0/src/commands/sync.ts)_
+_See code: [src/commands/sync.ts](https://github.com/numberoverzero/trudge-cli/blob/v1.0.0/src/commands/sync.ts)_
 
 ## `trudge upgrade DATABASEFILE MIGRATIONFILE`
 
@@ -186,5 +186,5 @@ EXAMPLES
   upgrade:1.hello_world.sql (a86c88c86fd3a2c0245e96294538b5c7b766697f)
 ```
 
-_See code: [src/commands/upgrade.ts](https://github.com/numberoverzero/trudge-cli/blob/v0.0.0/src/commands/upgrade.ts)_
+_See code: [src/commands/upgrade.ts](https://github.com/numberoverzero/trudge-cli/blob/v1.0.0/src/commands/upgrade.ts)_
 <!-- commandsstop -->

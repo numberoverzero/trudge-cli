@@ -1,10 +1,10 @@
 {
   "name": "trudge-cli",
   "description": "sqlite migration tool",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "author": "numberoverzero",
   "bin": {
-    "trudge": "./bin/run"
+    "trudge": "bin/run"
   },
   "bugs": "https://github.com/numberoverzero/trudge-cli/issues",
   "devDependencies": {
