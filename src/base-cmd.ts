@@ -52,7 +52,8 @@ export abstract class BaseDbCommand extends Command {
 
     // configure logging
     let logStream: fs.WriteStream
-    if (this.flags.log) logStream = fs.createWriteStream(this.flags.log, { flags: 'w', encoding: 'utf-8' })
+    if (this.flags.log)
+      logStream = fs.createWriteStream(this.flags.log, { flags: 'w', encoding: 'utf-8' })
     const verboseLog = (msg: string) => {
       if (this.flags.log) logStream.write(msg + '\n', 'utf-8')
       if (this.flags.verbose) this.log(msg)
