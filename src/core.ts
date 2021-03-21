@@ -5,6 +5,10 @@ import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 
+const _noop = () => {
+  /* no logging */
+}
+
 type Migration = {
   id: number
   name: string
@@ -65,9 +69,7 @@ const DEFAULT_SYNCHRONIZE_OPTS: Required<SynchronizeOptions> = {
   shouldApplyDowngrade: alwaysTrue,
   shouldApplyUpgrade: alwaysTrue,
   forceLatestIfSynchronized: false,
-  verbose: () => {
-    /* no logging */
-  },
+  verbose: _noop,
 }
 
 /**
