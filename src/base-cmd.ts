@@ -64,6 +64,10 @@ export abstract class BaseDbCommand extends Command {
     this.migrationTableName = this.flags.table
   }
 
+  async finally(_: Error|undefined): Promise<any> {
+    if(this.db?.open) this.db.close()
+  }
+
   changeLine(
     migration: Migration,
     mode: MigrationMode,
